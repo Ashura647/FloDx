@@ -1,0 +1,363 @@
+OLD CODE
+doesnt work well doesnt sort anything
+
+def ODvsCPlot(file_path, sheets):
+    plancks = 6.626e-34
+
+    results = []
+
+    for sheet_name in sheets:
+        print(f'\nProcessing sheet: {sheet_name}\n')
+        
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        df.columns = df.columns.str.strip()
+        df = df.drop(columns=[df.columns[4], df.columns[5]])
+
+        df.sort_values(by=["sensor", "time (s)"], inplace=True)
+
+        unique_sensor_ids = df['sensor'].unique()
+
+        for sensor_id in unique_sensor_ids:
+            sensor_data = df[df['sensor'] == sensor_id]
+
+            F0 = 1 / sensor_data['Clear']
+
+            for i in range(1, 9):
+                column_name = f'F{i}'
+                if column_name in sensor_data.columns:
+                    F = 1 / sensor_data[column_name]
+
+                    I = plancks * F
+                    I0 = plancks * F0
+
+                    sensor_data[f'OD_{i}'] = np.abs(-np.log10(I / I0))
+
+                    od_column = sensor_data[f'OD_{i}']
+
+                    avg_od = od_column.mean()
+                    std_od = od_column.std()
+
+                    results.append({
+                        'Sensor': sensor_id,
+                        'Concentration': sheet_name,
+                        f'Channel_{i}_avg': avg_od,
+                        f'Channel_{i}_std': std_od
+                    })
+
+    # Convert results to a DataFrame
+    results_df = pd.DataFrame(results)
+
+    # Pivot the DataFrame to have concentrations as columns and sensors as rows
+    pivoted_df = results_df.pivot_table(index='Sensor', columns='Concentration', aggfunc=np.mean)
+
+    # Save DataFrame to Excel file
+    output_file = "ConcentrationsOD_with_std.xlsx"
+    pivoted_df.to_excel(output_file)
+    print(f"Results saved to {output_file}")
+"""
+
+
+"""
+def extract_concentration(sheet_name):
+    try:
+        return float(sheet_name.rstrip('%'))
+    except ValueError:
+        return float('inf')
+
+def sort_sheets_by_concentration(sheets):
+    return sorted(sheets, key=extract_concentration)
+
+def betaODvsCPlot(file_path, sheets):
+    plancks = 6.626e-34
+
+    sorted_sheets = sort_sheets_by_concentration(sheets)  
+    results = []
+
+    for sheet_name in sorted_sheets:
+        print(f'\nProcessing sheet: {sheet_name}\n')
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        df.columns = df.columns.str.strip()
+        df = df.drop(columns=[df.columns[4], df.columns[5]])
+        df.sort_values(by=["sensor", "time (s)"], inplace=True)
+
+        unique_sensor_ids = df['sensor'].unique()
+
+        for sensor_id in unique_sensor_ids:
+            sensor_data = df[df['sensor'] == sensor_id]
+            F0 = 1 / sensor_data['Clear']
+
+            for i in range(1, 9):
+                column_name = f'F{i}'
+                if (column_name in sensor_data.columns):
+                    F = 1 / sensor_data[column_name]
+                    I = plancks * F
+                    I0 = plancks * F0
+                    sensor_data[f'OD_{i}'] = np.abs(-np.log10(I / I0))
+
+                    od_column = sensor_data[f'OD_{i}']
+                    avg_od = od_column.mean()
+                    std_od = od_column.std()
+
+                    results.append({
+                        'Sensor': sensor_id,
+                        'Concentration': sheet_name,
+                        f'Channel_{i}avg': avg_od,
+                        f'Channel_{i}_std': std_od
+                    })
+
+    results_df = pd.DataFrame(results)
+    results_df['Concentration'] = pd.Categorical(results_df['Concentration'], categories=sorted_sheets, ordered=True)
+    pivoted_df = results_df.pivot_table(index='Sensor', columns='Concentration', aggfunc=np.mean)
+
+    output_file = "ConcentrationsOD_with_std.xlsx"
+    pivoted_df.to_excel(output_file)
+    print(f"Results saved to {output_file}")
+
+    unique_sensor_ids = results_df['Sensor'].unique()
+    channels = [f'Channel_{i}' for i in range(1, 9)]
+
+    for sensor_id in unique_sensor_ids:
+        for channel in channels:
+            avg_col = f'{channel}_avg'
+            std_col = f'{channel}_std'
+            if avg_col in results_df.columns and std_col in results_df.columns:
+                sensor_data = results_df[results_df['Sensor'] == sensor_id]
+                concentrations = sensor_data['Concentration']
+                avg_values = sensor_data[avg_col].values
+                std_values = sensor_data[std_col].values
+
+                plt.figure(figsize=(12, 8))
+                plt.errorbar(concentrations, avg_values, yerr=std_values, fmt='o-', label=f'Sensor {sensor_id}')
+                plt.xlabel('Concentration')
+                plt.ylabel(f'{channel} Average OD')
+                plt.title(f'Average OD vs Concentration for Sensor {sensor_id} - {channel}')
+                plt.xticks(rotation=45)
+                plt.legend()
+                plt.tight_layout()
+
+                plot_file = f"Sensor_{sensor_id}_{channel}_OD_vs_Concentration.png"
+                plt.savefig(plot_file)
+                print(f"Plot saved to {plot_file}")
+                plt.show()
+"""
+
+
+
+"""
+def extract_concentration(sheet_name):
+    try:
+        return float(sheet_name.rstrip('%'))
+    except ValueError:
+        return float('inf')
+
+def sort_sheets_by_concentration(sheets):
+    return sorted(sheets, key=extract_concentration)
+
+def process_sheet(file_path, sheet_name, plancks):
+    df = pd.read_excel(file_path, sheet_name=sheet_name)
+    df.columns = df.columns.str.strip()
+    df = df.drop(columns=[df.columns[4], df.columns[5]])
+    df.sort_values(by=["sensor", "time (s)"], inplace=True)
+
+    unique_sensor_ids = df['sensor'].unique()
+    results = []
+
+    for sensor_id in unique_sensor_ids:
+        sensor_data = df[df['sensor'] == sensor_id]
+        F0 = 1 / sensor_data['Clear']
+
+        for i in range(1, 9):
+            column_name = f'F{i}'
+            if column_name in sensor_data.columns:
+                F = 1 / sensor_data[column_name]
+                I = plancks * F
+                I0 = plancks * F0
+                sensor_data[f'OD_{i}'] = np.abs(-np.log10(I / I0))
+
+                od_column = sensor_data[f'OD_{i}']
+                avg_od = od_column.mean()
+                std_od = od_column.std()
+
+                results.append({
+                    'Sensor': sensor_id,
+                    'Concentration': sheet_name,
+                    'Channel': i,
+                    'Average_OD': avg_od,
+                    'Standard_Deviation': std_od
+                })
+    return results
+
+def organize_results(file_path, sheets):
+    plancks = 6.626e-34
+    sorted_sheets = sort_sheets_by_concentration(sheets)
+    all_results = []
+
+    for sheet_name in sorted_sheets:
+        print(f'\nProcessing sheet: {sheet_name}\n')
+        results = process_sheet(file_path, sheet_name, plancks)
+        all_results.extend(results)
+
+    results_df = pd.DataFrame(all_results)
+    results_df['Concentration'] = pd.Categorical(results_df['Concentration'], categories=sorted_sheets, ordered=True)
+    results_df = results_df.sort_values(by=['Sensor', 'Channel', 'Concentration'])
+
+    return results_df
+
+def save_results_to_excel(results_df, output_file):
+    writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
+
+    for channel in range(1, 9):
+        channel_df = results_df[results_df['Channel'] == channel]
+        if not channel_df.empty:
+            channel_df = channel_df.pivot_table(index=['Sensor', 'Concentration'], values=['Average_OD', 'Standard_Deviation'])
+            channel_df.to_excel(writer, sheet_name=f'Channel_{channel}')
+
+    writer.save()
+    print(f"Results saved to {output_file}")
+
+def ODvsCPlot(file_path, sheets):
+    results_df = organize_results(file_path, sheets)
+    save_results_to_excel(results_df, "ConcentrationsOD_with_std.xlsx")
+
+    unique_sensor_ids = results_df['Sensor'].unique()
+
+    for sensor_id in unique_sensor_ids:
+        for channel in range(1, 9):
+            sensor_channel_data = results_df[(results_df['Sensor'] == sensor_id) & (results_df['Channel'] == channel)]
+            if not sensor_channel_data.empty:
+                concentrations = sensor_channel_data['Concentration']
+                avg_values = sensor_channel_data['Average_OD']
+                std_values = sensor_channel_data['Standard_Deviation']
+
+                plt.figure(figsize=(12, 8))
+                plt.errorbar(concentrations, avg_values, yerr=std_values, fmt='o-', label=f'Sensor {sensor_id}')
+                plt.xlabel('Concentration')
+                plt.ylabel(f'Channel {channel} Average OD')
+                plt.title(f'Average OD vs Concentration for Sensor {sensor_id} - Channel {channel}')
+                plt.xticks(rotation=45)
+                plt.legend()
+                plt.tight_layout()
+
+                plot_file = f"Sensor_{sensor_id}_Channel_{channel}_OD_vs_Concentration.png"
+                plt.savefig(plot_file)
+                print(f"Plot saved to {plot_file}")
+                plt.show()
+
+# Example usage:
+ODvsCPlot(file_path, sheets)
+"""
+
+
+"""
+#CURRENTLY INCORRECT REMOVE FREQUENCY THERE IS NONE. JUST FUSE EVERYTHING CUZ ITS WHITE LIGHT. THE WAVELENGHTS ARE DIFFERENT
+# BECAUSE THERE IS A FILTER. SO GOAL 1) TAKE ALL OD DATA FUSE TOGETHER 2) PLOT OD AGAINST CONCENTRATION 
+# (MAKE A NEW FILE WHERE CONCENTRATON DATA FOR EACH SENSOR IS STORED SO. SENSOR 1 THE CONCETRATION OF CHANNEL 8 TO CHANNL 1)
+#
+def Heatmap():
+    output_folder = 'plots'
+    os.makedirs(output_folder, exist_ok=True)
+
+    plancks = 6.626e-34
+
+    colors = ['blue', 'green', 'red', 'purple', 'orange', 'brown', 'pink', 'gray']
+
+    r_squared_dict = {sheet_name: {} for sheet_name in sheets}
+
+    for sheet_name in sheets:
+        plt.figure(figsize=(14, 7))
+        plt.title(f'OD against Time for {sheet_name}')
+        plt.xlabel('Time (s)')
+        plt.ylabel('OD')
+        plt.grid(True)
+
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        df.columns = df.columns.str.strip()
+        df = df.drop(columns=[df.columns[4], df.columns[5]])  # Drop columns 5 and 6
+        df.sort_values(by=["sensor", "time (s)"], inplace=True)
+
+        unique_sensor_ids = df['sensor'].unique()
+
+        color_index = 0  
+
+        for sensor_id in unique_sensor_ids:
+            sensor_data = df[df['sensor'] == sensor_id]
+
+            F0 = 1 / sensor_data['Clear']
+
+            od_table = []
+
+            for i in range(1, 9):
+                column_name = f'F{i}'
+                if column_name in sensor_data.columns:
+                    F = 1 / sensor_data[column_name]
+
+                    I = plancks * F
+                    I0 = plancks * F0
+
+                    sensor_data[f'OD_{i}'] = -np.log10(I / I0)
+
+                    time_column = sensor_data['time (s)']
+                    od_column = sensor_data[f'OD_{i}']
+
+                    plt.plot(time_column, od_column, label=f'Channel_{i}', color=colors[color_index])
+
+                    m, b = np.polyfit(time_column, od_column, 1)
+
+                    plt.plot(time_column, m * time_column + b, linestyle='dashed')
+
+                    r_squared = r2_score(od_column, m * time_column + b)
+
+                    if sensor_id not in r_squared_dict[sheet_name]:
+                        r_squared_dict[sheet_name][sensor_id] = {}
+                    r_squared_dict[sheet_name][sensor_id][f'F{i}'] = r_squared
+
+                    plt.text(time_column.iloc[-1], m * time_column.iloc[-1] + b, f'R² = {r_squared:.4f}', fontsize=9, verticalalignment='bottom')
+
+                    for t, od in zip(time_column, od_column):
+                        od_table.append([f'F{i}', t, od])
+
+                    print(f'R-squared for {sheet_name} F{i}:', r_squared)
+
+                    color_index = (color_index + 1) % len(colors)
+
+            print(f"\nOD values for {sheet_name} and sensor ID {sensor_id}:")
+            print(tabulate(od_table, headers=['Frequency', 'Time (s)', 'OD'], tablefmt='grid'))
+
+            plt.legend()
+            plt.title(f'OD against Time for {sheet_name} - Sensor ID {sensor_id}')
+
+            plot_filename = f"{output_folder}/{sheet_name}_SensorID_{sensor_id}_plot.png"
+            plt.savefig(plot_filename)
+            print(f"Plot saved as {plot_filename}")
+
+            plt.clf()
+
+        plt.close()
+
+    print("All plots saved successfully.")
+
+    # Prepare data for heatmap
+    heatmap_data = []
+
+    for sheet_name, sensors in r_squared_dict.items():
+        for sensor_id, freqs in sensors.items():
+            for freq, r_squared in freqs.items():
+                heatmap_data.append([sheet_name, sensor_id, freq, r_squared])
+
+    heatmap_df = pd.DataFrame(heatmap_data, columns=['Sheet', 'Sensor', 'Frequency', 'R_squared'])
+    heatmap_pivot = heatmap_df.pivot_table(index=['Sheet', 'Sensor'], columns='Frequency', values='R_squared')
+
+    # Plot heatmap
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(heatmap_pivot, annot=True, cmap='coolwarm', center=0, cbar_kws={'label': 'R-squared'})
+    plt.title('R-squared Values Heatmap')
+    plt.xlabel('Frequency Channels')
+    plt.ylabel('Sheet and Sensor')
+    heatmap_filename = f"{output_folder}/R_squared_heatmap.png"
+    plt.savefig(heatmap_filename)
+    plt.show()
+    print(f"Heatmap saved as {heatmap_filename}")
+
+    print("Analysis complete.")
+
+"""

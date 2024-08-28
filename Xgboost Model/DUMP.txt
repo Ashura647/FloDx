@@ -1,0 +1,2963 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# Load the Excel file
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+# Check sheet names
+sheet_names = xls.sheet_names
+
+# Load data from one sheet for demonstration (e.g., the first sheet)
+sheet_name = sheet_names[0]
+df = pd.read_excel(xls, sheet_name=sheet_name)
+
+# Display the dataframe to verify
+print(f'Data from sheet "{sheet_name}":')
+print(df.head())  # Display the first few rows to inspect the structure
+
+# Convert dataframe to long format for better feature-target relationship
+df_long = pd.melt(df, id_vars=['time (h)'], var_name='medium', value_name='OD')
+
+# Prepare features and target
+X = df_long[['time (h)', 'medium']]
+y = df_long['OD']
+
+# One-hot encode the 'medium' feature
+X = pd.get_dummies(X, columns=['medium'], drop_first=True)
+
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Define a pipeline with standardization and XGBoost regressor
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('regressor', xgb.XGBRegressor(
+        objective='reg:squarederror',
+        eval_metric='rmse'
+    ))
+])
+
+# Define parameter grid for hyperparameter tuning
+param_grid = {
+    'regressor__max_depth': [3, 5, 7],
+    'regressor__learning_rate': [0.01, 0.1, 0.2],
+    'regressor__n_estimators': [50, 100, 200]
+}
+
+# Use GridSearchCV for hyperparameter tuning
+grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+
+# Train the model with cross-validation and hyperparameter tuning
+grid_search.fit(X_train, y_train)
+
+# Best parameters and model evaluation
+print(f'Best parameters: {grid_search.best_params_}')
+best_model = grid_search.best_estimator_
+
+# Make predictions
+y_pred = best_model.predict(X_test)
+
+# Evaluate the model
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+print(f'Mean Squared Error: {mse:.2f}')
+print(f'R^2 Score: {r2:.2f}')
+
+# Plotting predictions vs actual values
+plt.figure(figsize=(10, 6))
+plt.scatter(y_test, y_pred, alpha=0.3)
+plt.xlabel('Actual OD')
+plt.ylabel('Predicted OD')
+plt.title('Actual vs Predicted OD')
+plt.grid(True)
+plt.show()
+
+# Feature importance
+feature_importances = best_model.named_steps['regressor'].feature_importances_
+features = X.columns
+importance_df = pd.DataFrame({'Feature': features, 'Importance': feature_importances})
+importance_df = importance_df.sort_values(by='Importance', ascending=False)
+
+print('Feature Importances:')
+print(importance_df)
+
+# Optional: Plot feature importances
+plt.figure(figsize=(10, 6))
+plt.bar(importance_df['Feature'], importance_df['Importance'])
+plt.xlabel('Features')
+plt.ylabel('Importance')
+plt.title('Feature Importance')
+plt.xticks(rotation=90)
+plt.show()
+
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# Load the Excel file
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+# Load data from the training sheet (e.g., 'No.1 (n=12)')
+sheet_name_train = 'No.1 (n=12)'
+df_train = pd.read_excel(xls, sheet_name=sheet_name_train)
+
+# Load data from another sheet for testing (e.g., 'No.12 (n=12)')
+sheet_name_test = 'No.12 (n=12)'
+df_test = pd.read_excel(xls, sheet_name=sheet_name_test)
+
+# Rename columns for simplicity (start from OD2)
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+df_train = rename_columns(df_train)
+df_test = rename_columns(df_test)
+
+# Display the dataframes to verify
+print(f'Data from sheet "{sheet_name_train}":')
+print(df_train.head())  # Display the first few rows to inspect the structure
+
+print(f'\nData from sheet "{sheet_name_test}":')
+print(df_test.head())  # Display the first few rows to inspect the structure
+
+# Function to create lag features
+def create_lag_features(data, target_col, lag=1):
+    lagged_data = data.copy()
+    for i in range(1, lag + 1):
+        lagged_data[f'lag_{i}'] = lagged_data[target_col].shift(i)
+    return lagged_data.dropna()
+
+# Prepare the training data (start from OD2)
+df_train_lagged = create_lag_features(df_train, 'OD2')
+X_train = df_train_lagged.drop(columns=['time (h)', 'OD2'])
+y_train = df_train_lagged['OD2']
+
+# Prepare the testing data (start from OD2)
+df_test_lagged = create_lag_features(df_test, 'OD2')
+X_test = df_test_lagged.drop(columns=['time (h)', 'OD2'])
+y_test = df_test_lagged['OD2']
+
+# Define a pipeline with standardization and XGBoost regressor
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('regressor', xgb.XGBRegressor(
+        objective='reg:squarederror',
+        eval_metric='rmse'
+    ))
+])
+
+# Define parameter grid for hyperparameter tuning
+param_grid = {
+    'regressor__max_depth': [3, 5, 7],
+    'regressor__learning_rate': [0.01, 0.1, 0.2],
+    'regressor__n_estimators': [50, 100, 200]
+}
+
+# Use GridSearchCV for hyperparameter tuning
+grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+
+# Train the model with cross-validation and hyperparameter tuning
+grid_search.fit(X_train, y_train)
+
+# Best parameters and model evaluation
+print(f'Best parameters: {grid_search.best_params_}')
+best_model = grid_search.best_estimator_
+
+# Make predictions on test data
+y_pred_train = best_model.predict(X_train)
+y_pred_test = best_model.predict(X_test)
+
+# Evaluate the model on test data
+mse_train = mean_squared_error(y_train, y_pred_train)
+r2_train = r2_score(y_train, y_pred_train)
+mse_test = mean_squared_error(y_test, y_pred_test)
+r2_test = r2_score(y_test, y_pred_test)
+
+print('Training set evaluation:')
+print(f'Mean Squared Error: {mse_train:.2f}')
+print(f'R^2 Score: {r2_train:.2f}')
+
+print('\nTesting set evaluation:')
+print(f'Mean Squared Error: {mse_test:.2f}')
+print(f'R^2 Score: {r2_test:.2f}')
+
+# Plotting predictions vs actual values over time for training data
+plt.figure(figsize=(12, 8))
+plt.plot(df_train['time (h)'], df_train['OD2'], label='Actual Train', color='blue', alpha=0.5)
+plt.scatter(df_train_lagged.index, y_pred_train, label='Predicted Train', color='red', alpha=0.5)
+plt.xlabel('Time (hours)')
+plt.ylabel('OD')
+plt.title(f'Actual vs Predicted Bacterial Growth Over Time - {sheet_name_train}')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plotting predictions vs actual values over time for testing data
+plt.figure(figsize=(12, 8))
+plt.plot(df_test['time (h)'], df_test['OD2'], label='Actual Test', color='blue', alpha=0.5)
+plt.scatter(df_test_lagged.index, y_pred_test, label='Predicted Test', color='red', alpha=0.5)
+plt.xlabel('Time (hours)')
+plt.ylabel('OD')
+plt.title(f'Actual vs Predicted Bacterial Growth Over Time - {sheet_name_test}')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Feature importance
+feature_importances = best_model.named_steps['regressor'].feature_importances_
+features = X_train.columns
+importance_df = pd.DataFrame({'Feature': features, 'Importance': feature_importances})
+importance_df = importance_df.sort_values(by='Importance', ascending=False)
+
+print('Feature Importances:')
+print(importance_df)
+
+# Optional: Plot feature importances
+plt.figure(figsize=(12, 8))
+plt.bar(importance_df['Feature'], importance_df['Importance'])
+plt.xlabel('Features')
+plt.ylabel('Importance')
+plt.title('Feature Importance')
+plt.xticks(rotation=90)
+plt.show()
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# Load the Excel file
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+# Function to rename columns (start from OD2)
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+# Function to create lag features
+def create_lag_features(data, target_col, lag=1):
+    lagged_data = data.copy()
+    for i in range(1, lag + 1):
+        lagged_data[f'lag_{i}'] = lagged_data[target_col].shift(i)
+    return lagged_data.dropna()
+
+# Function to train and evaluate the model
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    # Check if X_train or y_train are empty
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None
+
+    # Define a pipeline with standardization and XGBoost regressor
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('regressor', xgb.XGBRegressor(
+            objective='reg:squarederror',
+            eval_metric='rmse'
+        ))
+    ])
+
+    # Define parameter grid for hyperparameter tuning
+    param_grid = {
+        'regressor__max_depth': [3, 5, 7],
+        'regressor__learning_rate': [0.01, 0.1, 0.2],
+        'regressor__n_estimators': [50, 100, 200]
+    }
+
+    # Use GridSearchCV for hyperparameter tuning
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+
+    # Train the model with cross-validation and hyperparameter tuning
+    grid_search.fit(X_train, y_train)
+
+    # Best parameters and model evaluation
+    print(f'Best parameters: {grid_search.best_params_}')
+    best_model = grid_search.best_estimator_
+
+    # Make predictions on test data
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    # Evaluate the model on test data
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+# Function to update initial dataset with new data
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    updated_data = pd.concat([initial_data, new_data], ignore_index=True)
+    return updated_data
+
+# Function to plot OD data and predictions
+def plot_od_predictions(df, y_pred, sheet_name):
+    plt.figure(figsize=(10, 6))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)')
+    plt.plot(df['time (h)'].iloc[:-1], y_pred, label='Predicted Data', linestyle='--')  # Adjusted line
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Prediction vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# Function to print head of data frame
+def print_data_head(df):
+    print(df.head())
+
+# Load initial training data
+sheet_name_train_initial = 'No.1 (n=12)'
+df_train_initial = pd.read_excel(xls, sheet_name=sheet_name_train_initial)
+
+# Load initial testing data
+sheet_name_test_initial = 'No.12 (n=12)'
+df_test_initial = pd.read_excel(xls, sheet_name=sheet_name_test_initial)
+
+# Train and evaluate the model with initial data
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)  # Display the first few rows to inspect the structure
+
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)  # Display the first few rows to inspect the structure
+
+df_train_initial = rename_columns(df_train_initial)
+df_test_initial = rename_columns(df_test_initial)
+X_train_initial = create_lag_features(df_train_initial, 'OD2').drop(columns=['time (h)', 'OD2'])
+y_train_initial = create_lag_features(df_train_initial, 'OD2')['OD2']
+X_test_initial = create_lag_features(df_test_initial, 'OD2').drop(columns=['time (h)', 'OD2'])
+y_test_initial = create_lag_features(df_test_initial, 'OD2')['OD2']
+
+model, y_pred_initial = train_evaluate_model(X_train_initial, y_train_initial, X_test_initial, y_test_initial)
+
+# Plot initial predictions
+plot_od_predictions(df_test_initial, y_pred_initial, sheet_name_test_initial)
+
+# Prompt user to decide whether to incorporate new training data
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    # Load new training data
+    new_sheet_name_train = 'No.2 (n=12)'  # Example: Load new training data from another sheet
+    df_train_new = pd.read_excel(xls, sheet_name=new_sheet_name_train)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)  # Display the first few rows to inspect the structure
+    
+    # Update initial data with new data
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    # Retrain the model with updated training data
+    X_train_updated = create_lag_features(df_train_updated, 'OD2').drop(columns=['time (h)', 'OD2'])
+    y_train_updated = create_lag_features(df_train_updated, 'OD2')['OD2']
+    
+    model, y_pred_updated = train_evaluate_model(X_train_updated, y_train_updated, X_test_initial, y_test_initial)
+
+    # Optionally update initial data to reflect the updated dataset
+    df_train_initial = df_train_updated
+
+    # Plot updated predictions
+    plot_od_predictions(df_test_initial, y_pred_updated, sheet_name_test_initial)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# Load the Excel file
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+# Function to rename columns (start from OD2)
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+# Function to create lag features for multiple columns
+def create_lag_features(data, target_cols, lag=1):
+    lagged_data = data.copy()
+    for col in target_cols:
+        for i in range(1, lag + 1):
+            lagged_data[f'lag_{i}_{col}'] = lagged_data[col].shift(i)
+    lagged_data.dropna(inplace=True)  # Drop rows with NaN after creating lag features
+    return lagged_data
+
+# Function to train and evaluate the model for multiple columns
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None
+
+    # Prepare DMatrix for XGBoost
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    dtest = xgb.DMatrix(X_test, label=y_test)
+
+    # Define parameter grid for hyperparameter tuning
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    # Use GridSearchCV for hyperparameter tuning
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    # Make predictions on test data
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+# Function to update initial dataset with new data
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+# Function to plot OD data and predictions for multiple columns
+def plot_od_predictions(df, y_pred, sheet_name):
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(df['time (h)'][len(df['time (h)']) - len(y_pred):], y_pred, label='Predicted', linestyle='--')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def print_data_head(df):
+    print(df.head())
+
+# Load initial training and testing data
+sheet_name_train_initial = 'No.1 (n=12)'
+df_train_initial = pd.read_excel(xls, sheet_name=sheet_name_train_initial)
+sheet_name_test_initial = 'No.12 (n=12)'
+df_test_initial = pd.read_excel(xls, sheet_name=sheet_name_test_initial)
+
+# Inspect the initial data
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+# Rename columns for consistency
+df_train_initial = rename_columns(df_train_initial)
+df_test_initial = rename_columns(df_test_initial)
+
+# Define OD columns to iterate over
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+# Prepare lagged features for initial training and testing data
+X_train_initial = create_lag_features(df_train_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_train_initial = create_lag_features(df_train_initial, od_columns)[od_columns]
+X_test_initial = create_lag_features(df_test_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_test_initial = create_lag_features(df_test_initial, od_columns)[od_columns]
+
+# Aggregate predictions for each OD column
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+# Train and evaluate models for each OD column
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+# Compute average predictions across all OD columns
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+# Plot initial predictions
+plot_od_predictions(df_test_initial, y_pred_aggregated_initial, sheet_name_test_initial)
+
+# Prompt user to decide whether to incorporate new training data
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    # Load new training data
+    new_sheet_name_train = 'No.12 (n=12)'
+    df_train_new = pd.read_excel(xls, sheet_name=new_sheet_name_train)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    # Update initial data with new data
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    # Prepare lagged features for updated training data
+    X_train_updated = create_lag_features(df_train_updated, od_columns).drop(columns=['time (h)'] + od_columns)
+    y_train_updated = create_lag_features(df_train_updated, od_columns)[od_columns]
+    
+    # Aggregate predictions for each OD column with updated data
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col])
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    # Compute average predictions across all OD columns
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    # Update initial training data to include new data
+    df_train_initial = df_train_updated
+
+    # Plot updated predictions
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, sheet_name_test_initial)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+
+#WORKING
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# Load the Excel file
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+# Function to rename columns (start from OD2)
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+# Function to create lag features for multiple columns
+def create_lag_features(data, target_cols, lag=1):
+    lagged_data = data.copy()
+    for col in target_cols:
+        for i in range(1, lag + 1):
+            lagged_data[f'lag_{i}_{col}'] = lagged_data[col].shift(i)
+    lagged_data.dropna(inplace=True)  # Drop rows with NaN after creating lag features
+    return lagged_data
+
+# Function to train and evaluate the model for multiple columns
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None
+
+    # Prepare DMatrix for XGBoost
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    dtest = xgb.DMatrix(X_test, label=y_test)
+
+    # Define parameter grid for hyperparameter tuning
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    # Use GridSearchCV for hyperparameter tuning
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    # Make predictions on test data
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+# Function to update initial dataset with new data
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+# Function to plot OD data and predictions for multiple columns
+def plot_od_predictions(df, y_pred, sheet_name):
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(df['time (h)'][len(df['time (h)']) - len(y_pred):], y_pred, label='Predicted', linestyle='--')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def print_data_head(df):
+    print(df.head())
+
+# Load initial training and testing data
+sheet_name_train_initial = 'No.1 (n=12)'
+df_train_initial = pd.read_excel(xls, sheet_name=sheet_name_train_initial)
+sheet_name_test_initial = 'No.12 (n=12)'
+df_test_initial = pd.read_excel(xls, sheet_name=sheet_name_test_initial)
+
+# Inspect the initial data
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+# Rename columns for consistency
+df_train_initial = rename_columns(df_train_initial)
+df_test_initial = rename_columns(df_test_initial)
+
+# Define OD columns to iterate over
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+# Prepare lagged features for initial training and testing data
+X_train_initial = create_lag_features(df_train_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_train_initial = create_lag_features(df_train_initial, od_columns)[od_columns]
+X_test_initial = create_lag_features(df_test_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_test_initial = create_lag_features(df_test_initial, od_columns)[od_columns]
+
+# Aggregate predictions for each OD column
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+# Train and evaluate models for each OD column
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+# Compute average predictions across all OD columns
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+# Plot initial predictions
+plot_od_predictions(df_test_initial, y_pred_aggregated_initial, sheet_name_test_initial)
+
+# Prompt user to decide whether to incorporate new training data
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    # Load new training data
+    new_sheet_name_train = sheet_name_test_initial
+    df_train_new = pd.read_excel(xls, sheet_name=new_sheet_name_train)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    # Update initial data with new data
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    # Prepare lagged features for updated training data
+    X_train_updated = create_lag_features(df_train_updated, od_columns).drop(columns=['time (h)'] + od_columns)
+    y_train_updated = create_lag_features(df_train_updated, od_columns)[od_columns]
+    
+    # Aggregate predictions for each OD column with updated data
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col])
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    # Compute average predictions across all OD columns
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    # Update initial training data to include new data
+    df_train_initial = df_train_updated
+
+    # Plot updated predictions
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, sheet_name_test_initial)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+
+#btr WORKING
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from scipy.stats import f
+
+# Load Excel file and sheets
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+# Function to rename columns (start from OD2)
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+# Function to create lag features
+def create_lag_features(data, target_cols, lag=1):
+    lagged_data = data.copy()
+    for col in target_cols:
+        for i in range(1, lag + 1):
+            lagged_data[f'lag_{i}_{col}'] = lagged_data[col].shift(i)
+    lagged_data.dropna(inplace=True)  
+    return lagged_data
+
+# Function to train and evaluate model
+def train_evaluate_model(X_train, y_train, X_test, y_test, plot_residuals_option):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None, None, None
+
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    dtest = xgb.DMatrix(X_test, label=y_test)
+
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    if plot_residuals_option == 'yes':
+        plot_residuals(y_test, y_pred_test, title='Residual Plot')
+
+    return best_model, y_pred_test, r2_train, r2_test
+
+# Function to update initial data
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+# Function to plot OD predictions
+def plot_od_predictions(df, y_pred, sheet_name):
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(df['time (h)'][len(df['time (h)']) - len(y_pred):], y_pred, label='Predicted', linestyle='--')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# Function to print data head
+def print_data_head(df):
+    print(df.head())
+
+# Function to plot residuals
+def plot_residuals(y_test, y_pred, title='Residual Plot'):
+    residuals = y_test - y_pred
+    plt.figure(figsize=(8, 6))
+    plt.scatter(y_pred, residuals, alpha=0.5)
+    plt.axhline(y=0, color='r', linestyle='--')
+    plt.title(title)
+    plt.xlabel('Predicted Values')
+    plt.ylabel('Residuals')
+    plt.grid(True)
+    plt.show()
+
+# Function to perform F-test
+def perform_f_test(y_test, y_pred_original, y_pred_updated, alpha=0.05):
+    n = len(y_test)
+    k1 = 1  # degrees of freedom for model 1
+    k2 = 1  # degrees of freedom for model 2
+
+    # Calculate mean squared errors
+    mse1 = mean_squared_error(y_test, y_pred_original)
+    mse2 = mean_squared_error(y_test, y_pred_updated)
+
+    # Calculate F-statistic
+    F = ((mse1 - mse2) / k2) / (mse2 / (n - k1 - 1))
+
+    # Calculate critical value from F-distribution
+    critical_value = f.ppf(1 - alpha, k1, n - k1 - 1)
+
+    # Compare F-statistic with critical value
+    if F > critical_value:
+        print(f'F-statistic: {F:.2f}, Critical value: {critical_value:.2f}')
+        print('Reject null hypothesis: Model 2 is better than Model 1')
+    else:
+        print(f'F-statistic: {F:.2f}, Critical value: {critical_value:.2f}')
+        print('Fail to reject null hypothesis: Model 1 is better or there is no significant difference')
+
+# Main script
+sheet_name_train_initial = 'No.1 (n=12)'
+df_train_initial = pd.read_excel(xls, sheet_name=sheet_name_train_initial)
+sheet_name_test_initial = 'No.12 (n=12)'
+df_test_initial = pd.read_excel(xls, sheet_name=sheet_name_test_initial)
+
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+# Rename columns and create lag features
+df_train_initial = rename_columns(df_train_initial)
+df_test_initial = rename_columns(df_test_initial)
+
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+X_train_initial = create_lag_features(df_train_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_train_initial = create_lag_features(df_train_initial, od_columns)[od_columns]
+X_test_initial = create_lag_features(df_test_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_test_initial = create_lag_features(df_test_initial, od_columns)[od_columns]
+
+plot_residuals_option = input("Do you want to plot residuals? (yes/no): ").strip().lower()
+
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col, r2_train, r2_test = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col, plot_residuals_option)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+plot_od_predictions(df_test_initial, y_pred_aggregated_initial, sheet_name_test_initial)
+
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    new_sheet_name_train = sheet_name_test_initial
+    df_train_new = pd.read_excel(xls, sheet_name=new_sheet_name_train)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = create_lag_features(df_train_updated, od_columns).drop(columns=['time (h)'] + od_columns)
+    y_train_updated = create_lag_features(df_train_updated, od_columns)[od_columns]
+    
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col, r2_train, r2_test = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col], plot_residuals_option)
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    df_train_initial = df_train_updated
+
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, sheet_name_test_initial)
+
+    perform_f_test(y_test_initial[od_columns[0]], y_pred_aggregated_initial, y_pred_aggregated_updated)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+
+#best model so fra
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from scipy.stats import f
+
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+def create_lag_features(data, target_cols, lag=1):
+    lagged_data = data.copy()
+    for col in target_cols:
+        for i in range(1, lag + 1):
+            lagged_data[f'lag_{i}_{col}'] = lagged_data[col].shift(i)
+    lagged_data.dropna(inplace=True)  
+    return lagged_data
+
+def train_evaluate_model(X_train, y_train, X_test, y_test, plot_residuals_option):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None, None, None
+
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    dtest = xgb.DMatrix(X_test, label=y_test)
+
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    if plot_residuals_option == 'yes':
+        plot_residuals(y_test, y_pred_test, title='Residual Plot')
+
+    return best_model, y_pred_test, r2_train, r2_test
+
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def plot_od_predictions(df, y_pred, sheet_name):
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(df['time (h)'][len(df['time (h)']) - len(y_pred):], y_pred, label='Predicted', linestyle='--')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def print_data_head(df):
+    print(df.head())
+
+def plot_residuals(y_test, y_pred, title='Residual Plot'):
+    residuals = y_test - y_pred
+    plt.figure(figsize=(8, 6))
+    plt.scatter(y_pred, residuals, alpha=0.5)
+    plt.axhline(y=0, color='r', linestyle='--')
+    plt.title(title)
+    plt.xlabel('Predicted Values')
+    plt.ylabel('Residuals')
+    plt.grid(True)
+    plt.show()
+
+def perform_f_test(y_test, y_pred_original, y_pred_updated, alpha=0.05):
+    n = len(y_test)
+    k1 = 1  # degrees of freedom for model 1
+    k2 = 1  # degrees of freedom for model 2
+
+    mse1 = mean_squared_error(y_test, y_pred_original)
+    mse2 = mean_squared_error(y_test, y_pred_updated)
+
+    F = ((mse1 - mse2) / k2) / (mse2 / (n - k1 - 1))
+
+    critical_value = f.ppf(1 - alpha, k1, n - k1 - 1)
+
+    if F > critical_value:
+        print(f'F-statistic: {F:.2f}, Critical value: {critical_value:.2f}')
+        print('Reject null hypothesis: Model 2 is better than Model 1')
+    else:
+        print(f'F-statistic: {F:.2f}, Critical value: {critical_value:.2f}')
+        print('Fail to reject null hypothesis: Model 1 is better or there is no significant difference')
+
+sheet_name_train_initial = 'No.1 (n=12)'
+df_train_initial = pd.read_excel(xls, sheet_name=sheet_name_train_initial)
+sheet_name_test_initial = 'No.12 (n=12)'
+df_test_initial = pd.read_excel(xls, sheet_name=sheet_name_test_initial)
+
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+df_train_initial = rename_columns(df_train_initial)
+df_test_initial = rename_columns(df_test_initial)
+
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+X_train_initial = create_lag_features(df_train_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_train_initial = create_lag_features(df_train_initial, od_columns)[od_columns]
+X_test_initial = create_lag_features(df_test_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_test_initial = create_lag_features(df_test_initial, od_columns)[od_columns]
+
+plot_residuals_option = input("Do you want to plot residuals? (yes/no): ").strip().lower()
+
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col, r2_train, r2_test = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col, plot_residuals_option)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+plot_od_predictions(df_test_initial, y_pred_aggregated_initial, sheet_name_test_initial)
+
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    new_sheet_name_train = sheet_name_test_initial
+    df_train_new = pd.read_excel(xls, sheet_name=new_sheet_name_train)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = create_lag_features(df_train_updated, od_columns).drop(columns=['time (h)'] + od_columns)
+    y_train_updated = create_lag_features(df_train_updated, od_columns)[od_columns]
+    
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col, r2_train, r2_test = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col], plot_residuals_option)
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    df_train_initial = df_train_updated
+
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, sheet_name_test_initial)
+
+    perform_f_test(y_test_initial[od_columns[0]], y_pred_aggregated_initial, y_pred_aggregated_updated)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+from scipy.stats import f
+import joblib
+
+# File path for the Excel file
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+# Check the lag feature creation
+def create_lag_features(data, target_cols, lag=1):
+    lagged_data = data.copy()
+    for col in target_cols:
+        for i in range(1, lag + 1):
+            lagged_data[f'lag_{i}_{col}'] = lagged_data[col].shift(i)
+    lagged_data.dropna(inplace=True)  
+    return lagged_data
+
+def save_model(model, filename):
+    joblib.dump(model, filename)
+    print(f"Model saved to {filename}")
+
+def load_model(filename):
+    model = joblib.load(filename)
+    print(f"Model loaded from {filename}")
+    return model
+
+def train_evaluate_model(X_train, y_train, X_test, y_test, plot_residuals_option, save_model_option=False, model_filename='best_model.pkl'):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None, None, None
+
+    param_grid = {
+    'max_depth': [3, 5],
+    'learning_rate': [0.01, 0.1, 0.2],
+    'n_estimators': [50, 100, 200],
+    'gamma': [0, 0.1, 0.2],
+    #'subsample': [0.8, 0.9, 1.0],
+    #'colsample_bytree': [0.8, 0.9, 1.0],
+    'reg_alpha': [0, 0.1, 0.5],
+    'reg_lambda': [0, 0.1, 0.5]
+}
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+
+    if save_model_option:
+        save_model(best_model, model_filename)
+
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    if plot_residuals_option == 'yes':
+        plot_residuals(y_test, y_pred_test, title='Residual Plot')
+
+    return best_model, y_pred_test, r2_train, r2_test
+
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def plot_od_predictions(df, y_pred, sheet_name):
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(df['time (h)'][len(df['time (h)']) - len(y_pred):], y_pred, label='Predicted', linestyle='--')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def print_data_head(df):
+    print(df.head())
+
+def plot_residuals(y_test, y_pred, title='Residual Plot'):
+    residuals = y_test - y_pred
+    plt.figure(figsize=(8, 6))
+    plt.scatter(y_pred, residuals, alpha=0.5)
+    plt.axhline(y=0, color='r', linestyle='--')
+    plt.title(title)
+    plt.xlabel('Predicted Values')
+    plt.ylabel('Residuals')
+    plt.grid(True)
+    plt.show()
+
+def perform_f_test(y_test, y_pred_original, y_pred_updated, alpha=0.05):
+    n = len(y_test)
+    k1 = 1  # degrees of freedom for model 1
+    k2 = 1  # degrees of freedom for model 2
+
+    mse1 = mean_squared_error(y_test, y_pred_original)
+    mse2 = mean_squared_error(y_test, y_pred_updated)
+
+    F = ((mse1 - mse2) / k2) / (mse2 / (n - k1 - 1))
+
+    critical_value = f.ppf(1 - alpha, k1, n - k1 - 1)
+
+    if F > critical_value:
+        print(f'F-statistic: {F:.2f}, Critical value: {critical_value:.2f}')
+        print('Reject null hypothesis: Model 2 is better than Model 1')
+    else:
+        print(f'F-statistic: {F:.2f}, Critical value: {critical_value:.2f}')
+        print('Fail to reject null hypothesis: Model 1 is better or there is no significant difference')
+
+def reset_algorithm():
+    global df_train_initial, df_test_initial, model, X_train_initial, y_train_initial, X_test_initial, y_test_initial
+    
+    # Clear DataFrames
+    df_train_initial = pd.DataFrame()
+    df_test_initial = pd.DataFrame()
+    
+    # Reinitialize model
+    model = None
+    
+    # Clear any stored features and targets
+    X_train_initial = pd.DataFrame()
+    y_train_initial = pd.DataFrame()
+    X_test_initial = pd.DataFrame()
+    y_test_initial = pd.DataFrame()
+    
+    print("Algorithm has been reset. All previous data and states have been cleared.")
+    
+# Load initial data
+sheet_name_train_initial = 'No.1 (n=12)'
+df_train_initial = pd.read_excel(xls, sheet_name=sheet_name_train_initial)
+sheet_name_test_initial = 'No.12 (n=12)'
+df_test_initial = pd.read_excel(xls, sheet_name=sheet_name_test_initial)
+
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+df_train_initial = rename_columns(df_train_initial)
+df_test_initial = rename_columns(df_test_initial)
+
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+X_train_initial = create_lag_features(df_train_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_train_initial = create_lag_features(df_train_initial, od_columns)[od_columns]
+X_test_initial = create_lag_features(df_test_initial, od_columns).drop(columns=['time (h)'] + od_columns)
+y_test_initial = create_lag_features(df_test_initial, od_columns)[od_columns]
+
+plot_residuals_option = input("Do you want to plot residuals? (yes/no): ").strip().lower()
+
+load_existing_model = input("Do you want to load an existing model? (yes/no): ").strip().lower()
+save_models_option = False  
+
+if load_existing_model == 'yes':
+    model_filename = input("Enter the model filename to load: ").strip()
+    model = load_model(model_filename)
+    y_pred_test = model.predict(X_test_initial)
+else:
+    save_models_option = input("Do you want to save the models? (yes/no): ").strip().lower() == 'yes'
+    model_filename = 'initial_model.pkl' if save_models_option else None
+
+    model, y_pred_test, r2_train, r2_test = train_evaluate_model(
+        X_train_initial, 
+        y_train_initial.mean(axis=1), 
+        X_test_initial, 
+        y_test_initial.mean(axis=1), 
+        plot_residuals_option, 
+        save_models_option, 
+        model_filename
+    )
+
+    plot_od_predictions(df_test_initial, y_pred_test, sheet_name_test_initial)
+
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    new_sheet_name_train = sheet_name_test_initial
+    df_train_new = pd.read_excel(xls, sheet_name=new_sheet_name_train)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = create_lag_features(df_train_updated, od_columns).drop(columns=['time (h)'] + od_columns)
+    y_train_updated = create_lag_features(df_train_updated, od_columns)[od_columns]
+    
+    model_filename = 'final_model.pkl' if save_models_option else None
+    
+    model, y_pred_updated, r2_train, r2_test = train_evaluate_model(
+        X_train_updated, 
+        y_train_updated.mean(axis=1), 
+        X_test_initial, 
+        y_test_initial.mean(axis=1), 
+        plot_residuals_option, 
+        save_models_option, 
+        model_filename
+    )
+
+    plot_od_predictions(df_test_initial, y_pred_updated, sheet_name_test_initial)
+
+    perform_f_test(y_test_initial[od_columns[0]], y_pred_test, y_pred_updated)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+    
+print(y_pred_test[:10])
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+
+# Load Excel file
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+# Rename columns for consistency
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+# Train and evaluate model
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None, None
+
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+# Update initial data with new data
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+# Plot OD predictions
+def plot_od_predictions(df, y_pred, y_test, sheet_name):
+    residuals = y_test - y_pred
+    residual_std = np.std(residuals)
+    
+    time = df['time (h)'][len(df['time (h)']) - len(y_pred):]
+
+    # Calculate dynamic error scaling based on local variability of residuals
+    smooth_window = 7  # Adjust this window size as needed
+    residual_std_smooth = np.convolve(np.abs(residuals), np.ones(smooth_window)/smooth_window, mode='same')
+    error_scaling_factor = 3 * residual_std_smooth / np.max(residual_std_smooth)  # Adjust 2.0 based on desired sensitivity
+
+    y_pred_upper = y_pred + error_scaling_factor * residual_std
+    y_pred_lower = y_pred - error_scaling_factor * residual_std
+
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD3'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(time, y_pred, label='Predicted', linestyle='--', color='red')
+    plt.plot(time, y_pred_upper, linestyle='--', color='gray', label='Upper bound')
+    plt.plot(time, y_pred_lower, linestyle='--', color='gray', label='Lower bound')
+    plt.fill_between(time, y_pred_lower, y_pred_upper, color='gray', alpha=0.3, label='Error margin')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# Print data head
+def print_data_head(df):
+    print(df.head())
+
+# Load initial data
+sheet_name_train_initial = 'No.1 (n=12)'
+df_train_initial = pd.read_excel(xls, sheet_name=sheet_name_train_initial)
+sheet_name_test_initial = 'No.12 (n=12)'
+df_test_initial = pd.read_excel(xls, sheet_name=sheet_name_test_initial)
+
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+df_train_initial = rename_columns(df_train_initial)
+df_test_initial = rename_columns(df_test_initial)
+
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+X_train_initial = df_train_initial.drop(columns=['time (h)'])
+y_train_initial = df_train_initial[od_columns]
+X_test_initial = df_test_initial.drop(columns=['time (h)'])
+y_test_initial = df_test_initial[od_columns]
+
+# Aggregate initial predictions
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+
+# Use OD2 column from the test data for residuals calculation
+original_data = df_test_initial['OD3'][len(df_test_initial) - len(y_pred_aggregated_initial):]
+
+plot_od_predictions(df_test_initial, y_pred_aggregated_initial, original_data, sheet_name_test_initial)
+
+# Update the model with new training data if provided
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    new_sheet_name_train = sheet_name_test_initial
+    df_train_new = pd.read_excel(xls, sheet_name=new_sheet_name_train)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = df_train_updated.drop(columns=['time (h)'])
+    y_train_updated = df_train_updated[od_columns]
+    
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col])
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    df_train_initial = df_train_updated
+
+    original_data_updated = df_test_initial['OD3'][len(df_test_initial) - len(y_pred_aggregated_updated):]
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, original_data_updated, sheet_name_test_initial)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+
+# Load Excel file
+excel_file = r'KHK growth curves_LB.xlsx'
+xls = pd.ExcelFile(excel_file)
+
+# Rename columns for consistency
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+# Train and evaluate model
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None, None
+
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+# Plot OD predictions
+def plot_od_predictions(df, y_pred, y_test, sheet_name):
+    residuals = y_test - y_pred
+    residual_std = np.std(residuals)
+    
+    time = df['time (h)'][len(df['time (h)']) - len(y_pred):]
+
+    smooth_window = 5  
+    residual_std_smooth = np.convolve(np.abs(residuals), np.ones(smooth_window)/smooth_window, mode='same')
+    error_scaling_factor = 2.25 * residual_std_smooth / np.max(residual_std_smooth)  
+    y_pred_upper = y_pred + error_scaling_factor * residual_std
+    y_pred_lower = y_pred - error_scaling_factor * residual_std
+
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(time, y_pred, label='Predicted', linestyle='--', color='red')
+    plt.plot(time, y_pred_upper, linestyle='--', color='gray', label='Upper bound')
+    plt.plot(time, y_pred_lower, linestyle='--', color='gray', label='Lower bound')
+    plt.fill_between(time, y_pred_lower, y_pred_upper, color='gray', alpha=0.3, label='Error margin')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def print_data_head(df):
+    print(df.head())
+
+def load_original_data(xls):
+    sheet_names = xls.sheet_names
+    print("Available sheets:")
+    for i, sheet_name in enumerate(sheet_names):
+        print(f"{i+1}. {sheet_name}")
+
+    while True:
+        try:
+            sheet_index = int(input("\nEnter the index of the sheet to use as original data: ")) - 1
+            if sheet_index < 0 or sheet_index >= len(sheet_names):
+                raise ValueError("Invalid sheet index. Please enter a valid index.")
+            break
+        except ValueError as e:
+            print(e)
+
+    sheet_name_initial = sheet_names[sheet_index]
+    df_initial = pd.read_excel(xls, sheet_name=sheet_name_initial)
+    df_initial = rename_columns(df_initial)
+    return df_initial, sheet_name_initial
+
+df_train_initial, sheet_name_train_initial = load_original_data(xls)
+df_test_initial, sheet_name_test_initial = load_original_data(xls)
+
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+X_train_initial = df_train_initial.drop(columns=['time (h)'])
+y_train_initial = df_train_initial[od_columns]
+X_test_initial = df_test_initial.drop(columns=['time (h)'])
+y_test_initial = df_test_initial[od_columns]
+
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+# Use OD2 column from the test data for residuals calculation
+original_data = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_initial):]
+
+plot_od_predictions(df_test_initial, y_pred_aggregated_initial, original_data, sheet_name_test_initial)
+
+# Update the model with new training data if provided
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    df_train_new, new_sheet_name_train = load_original_data(xls)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = df_train_updated.drop(columns=['time (h)'])
+    y_train_updated = df_train_updated[od_columns]
+    
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col])
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    df_train_initial = df_train_updated
+
+    original_data_updated = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_updated):]
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, original_data_updated, sheet_name_test_initial)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+import joblib
+
+excel_file = r'KHK growth curves_MAA.xlsx'
+
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None, None
+
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def plot_od_predictions(df, y_pred, y_test, sheet_name):
+    residuals = y_test - y_pred
+    residual_std = np.std(residuals)
+    
+    time = df['time (h)'][len(df['time (h)']) - len(y_pred):]
+
+    smooth_window = 5
+    residual_std_smooth = np.convolve(np.abs(residuals), np.ones(smooth_window)/smooth_window, mode='same')
+    error_scaling_factor = 3.3 * residual_std_smooth / np.max(residual_std_smooth)  
+    y_pred_upper = y_pred + error_scaling_factor * residual_std
+    y_pred_lower = y_pred - error_scaling_factor * residual_std
+
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(time, y_pred, label='Predicted', linestyle='--', color='red')
+    plt.plot(time, y_pred_upper, linestyle='--', color='gray', label='Upper bound')
+    plt.plot(time, y_pred_lower, linestyle='--', color='gray', label='Lower bound')
+    plt.fill_between(time, y_pred_lower, y_pred_upper, color='gray', alpha=0.3, label='Error margin')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+def SavetoCsv(output_data, time, y_test, y_pred,y_pred_upper,y_pred_lower,sheet_name):
+    output_data = pd.DataFrame({
+        'time (h)': time,
+        'original OD': y_test,
+        'predicted OD': y_pred,
+        'upper bound': y_pred_upper,
+        'lower bound': y_pred_lower
+    })
+    output_file = f'{sheet_name}_od_predictions.csv'
+    output_data.to_csv(output_file, index=False)
+    print(f"Data saved to {output_file}")
+
+def print_data_head(df):
+    print(df.head())
+
+def load_original_data(xls):
+    sheet_names = xls.sheet_names
+    print("Available sheets:")
+    for i, sheet_name in enumerate(sheet_names):
+        print(f"{i+1}. {sheet_name}")
+
+    while True:
+        try:
+            sheet_index = int(input("\nEnter the index of the sheet to use as original data: ")) - 1
+            if sheet_index < 0 or sheet_index >= len(sheet_names):
+                raise ValueError("Invalid sheet index. Please enter a valid index.")
+            break
+        except ValueError as e:
+            print(e)
+
+    sheet_name_initial = sheet_names[sheet_index]
+    df_initial = pd.read_excel(xls, sheet_name=sheet_name_initial)
+    df_initial = rename_columns(df_initial)
+    return df_initial, sheet_name_initial
+
+df_train_initial, sheet_name_train_initial = load_original_data(xls)
+df_test_initial, sheet_name_test_initial = load_original_data(xls)
+
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+X_train_initial = df_train_initial.drop(columns=['time (h)'])
+y_train_initial = df_train_initial[od_columns]
+X_test_initial = df_test_initial.drop(columns=['time (h)'])
+y_test_initial = df_test_initial[od_columns]
+
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+original_data = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_initial):]
+
+plot_od_predictions(df_test_initial, y_pred_aggregated_initial, original_data, sheet_name_test_initial)
+
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    df_train_new, new_sheet_name_train = load_original_data(xls)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = df_train_updated.drop(columns=['time (h)'])
+    y_train_updated = df_train_updated[od_columns]
+    
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col])
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    df_train_initial = df_train_updated
+
+    original_data_updated = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_updated):]
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, original_data_updated, sheet_name_test_initial)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+import joblib
+
+excel_file = r'growthdashbtr.xlsx'
+
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None, None
+
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def plot_od_predictions(df, y_pred, y_test, sheet_name):
+    residuals = y_test - y_pred
+    residual_std = np.std(residuals)
+    
+    time = df['time (h)'][len(df['time (h)']) - len(y_pred):]
+
+    smooth_window = 5
+    residual_std_smooth = np.convolve(np.abs(residuals), np.ones(smooth_window)/smooth_window, mode='same')
+    error_scaling_factor = 3.3 * residual_std_smooth / np.max(residual_std_smooth)  
+    y_pred_upper = y_pred + error_scaling_factor * residual_std
+    y_pred_lower = y_pred - error_scaling_factor * residual_std
+
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(time, y_pred, label='Predicted', linestyle='--', color='red')
+    plt.plot(time, y_pred_upper, linestyle='--', color='gray', label='Upper bound')
+    plt.plot(time, y_pred_lower, linestyle='--', color='gray', label='Lower bound')
+    plt.fill_between(time, y_pred_lower, y_pred_upper, color='gray', alpha=0.3, label='Error margin')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+def SavetoCsv(output_data, time, y_test, y_pred,y_pred_upper,y_pred_lower,sheet_name):
+    output_data = pd.DataFrame({
+        'time (h)': time,
+        'original OD': y_test,
+        'predicted OD': y_pred,
+        'upper bound': y_pred_upper,
+        'lower bound': y_pred_lower
+    })
+    output_file = f'{sheet_name}_od_predictions.csv'
+    output_data.to_csv(output_file, index=False)
+    print(f"Data saved to {output_file}")
+
+def print_data_head(df):
+    print(df.head())
+
+def load_original_data(xls):
+    sheet_names = xls.sheet_names
+    print("Available sheets:")
+    for i, sheet_name in enumerate(sheet_names):
+        print(f"{i+1}. {sheet_name}")
+
+    while True:
+        try:
+            sheet_index = int(input("\nEnter the index of the sheet to use as original data: ")) - 1
+            if sheet_index < 0 or sheet_index >= len(sheet_names):
+                raise ValueError("Invalid sheet index. Please enter a valid index.")
+            break
+        except ValueError as e:
+            print(e)
+
+    sheet_name_initial = sheet_names[sheet_index]
+    df_initial = pd.read_excel(xls, sheet_name=sheet_name_initial)
+    df_initial = rename_columns(df_initial)
+    return df_initial, sheet_name_initial
+
+df_train_initial, sheet_name_train_initial = load_original_data(xls)
+df_test_initial, sheet_name_test_initial = load_original_data(xls)
+
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print_data_head(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print_data_head(df_test_initial)
+
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+X_train_initial = df_train_initial.drop(columns=['time (h)'])
+y_train_initial = df_train_initial[od_columns]
+X_test_initial = df_test_initial.drop(columns=['time (h)'])
+y_test_initial = df_test_initial[od_columns]
+
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+original_data = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_initial):]
+
+plot_od_predictions(df_test_initial, y_pred_aggregated_initial, original_data, sheet_name_test_initial)
+
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    df_train_new, new_sheet_name_train = load_original_data(xls)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print_data_head(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = df_train_updated.drop(columns=['time (h)'])
+    y_train_updated = df_train_updated[od_columns]
+    
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col])
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    df_train_initial = df_train_updated
+
+    original_data_updated = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_updated):]
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, original_data_updated, sheet_name_test_initial)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+import joblib
+import os
+
+excel_file = r'KHK growth curves_LB.xlsx'
+model_file = 'saved_models.pkl'
+
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None, None
+
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_train = best_model.predict(X_train)
+    y_pred_test = best_model.predict(X_test)
+
+    mse_train = mean_squared_error(y_train, y_pred_train)
+    r2_train = r2_score(y_train, y_pred_train)
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('Training set evaluation:')
+    print(f'Mean Squared Error: {mse_train:.2f}')
+    print(f'R^2 Score: {r2_train:.2f}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+def update_initial_data(initial_data, new_data):
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def plot_od_predictions(df, y_pred, y_test, sheet_name):
+    residuals = y_test - y_pred
+    residual_std = np.std(residuals)
+    
+    time = df['time (h)'][len(df['time (h)']) - len(y_pred):]
+
+    smooth_window = 5
+    residual_std_smooth = np.convolve(np.abs(residuals), np.ones(smooth_window)/smooth_window, mode='same')
+    error_scaling_factor = 3.3 * residual_std_smooth / np.max(residual_std_smooth)  
+    y_pred_upper = y_pred + error_scaling_factor * residual_std
+    y_pred_lower = y_pred - error_scaling_factor * residual_std
+
+    plt.figure(figsize=(12, 8))
+    plt.plot(df['time (h)'], df['OD2'], label='Original Data (OD2)', linestyle='-', color='blue', alpha=0.8)
+    plt.plot(time, y_pred, label='Predicted', linestyle='--', color='red')
+    plt.plot(time, y_pred_upper, linestyle='--', color='gray', label='Upper bound')
+    plt.plot(time, y_pred_lower, linestyle='--', color='gray', label='Lower bound')
+    plt.fill_between(time, y_pred_lower, y_pred_upper, color='gray', alpha=0.3, label='Error margin')
+    plt.xlabel('Time (hours)')
+    plt.ylabel('OD')
+    plt.title(f'OD Predictions vs Original Data for {sheet_name}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def save_models(models, file_name):
+    joblib.dump(models, file_name)
+    print(f"Models saved to {file_name}")
+
+def load_models(file_name):
+    if os.path.exists(file_name):
+        models = joblib.load(file_name)
+        print(f"Models loaded from {file_name}")
+        return models
+    else:
+        print(f"No saved model file found at {file_name}")
+        return {}
+
+def load_original_data(xls):
+    sheet_names = xls.sheet_names
+    print("Available sheets:")
+    for i, sheet_name in enumerate(sheet_names):
+        print(f"{i+1}. {sheet_name}")
+
+    while True:
+        try:
+            sheet_index = int(input("\nEnter the index of the sheet to use as original data: ")) - 1
+            if sheet_index < 0 or sheet_index >= len(sheet_names):
+                raise ValueError("Invalid sheet index. Please enter a valid index.")
+            break
+        except ValueError as e:
+            print(e)
+
+    sheet_name_initial = sheet_names[sheet_index]
+    df_initial = pd.read_excel(xls, sheet_name=sheet_name_initial)
+    df_initial = rename_columns(df_initial)
+    return df_initial, sheet_name_initial
+
+# Load or train models
+models = {}
+if os.path.exists(model_file):
+    load_choice = input("Would you like to load the existing model file? (yes/no): ").strip().lower()
+    if load_choice == 'yes':
+        models = load_models(model_file)
+
+if not models:  # If models are not loaded, train new models
+    df_train_initial, sheet_name_train_initial = load_original_data(xls)
+    df_test_initial, sheet_name_test_initial = load_original_data(xls)
+
+    print(f'Data from sheet "{sheet_name_train_initial}":')
+    print(df_train_initial)
+    print(f'\nData from sheet "{sheet_name_test_initial}":')
+    print(df_test_initial)
+
+    od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+    X_train_initial = df_train_initial.drop(columns=['time (h)'])
+    y_train_initial = df_train_initial[od_columns]
+    X_test_initial = df_test_initial.drop(columns=['time (h)'])
+    y_test_initial = df_test_initial[od_columns]
+
+    y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_initial
+        y_train_col = y_train_initial[col]
+        X_test_col = X_test_initial
+        y_test_col = y_test_initial[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+        models[col] = model  # Save each model to the dictionary
+        y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+    original_data = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_initial):]
+
+    plot_od_predictions(df_test_initial, y_pred_aggregated_initial, original_data, sheet_name_test_initial)
+
+    # Save all models to a single .pkl file
+    save_models(models, model_file)
+
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    df_train_new, new_sheet_name_train = load_original_data(xls)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = df_train_updated.drop(columns=['time (h)'])
+    y_train_updated = df_train_updated[od_columns]
+    
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col])
+        models[col] = model  # Update the models dictionary
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    df_train_initial = df_train_updated
+
+    original_data_updated = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_updated):]
+    plot_od_predictions(df_test_initial, y_pred_aggregated_updated, original_data_updated, sheet_name_test_initial)
+
+    # Save the updated models to the .pkl file
+    save_models(models, model_file)
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+import pandas as pd
+import numpy as np
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+import os
+
+excel_file = r'KHK growth curves_LB.xlsx'
+
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    """ Rename columns of the dataframe. """
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    """ Train the XGBoost model and evaluate it. """
+    if X_train.empty or y_train.empty:
+        print("Error: Training data is empty. Model cannot be trained.")
+        return None, None
+
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_test = best_model.predict(X_test)
+
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+def update_initial_data(initial_data, new_data):
+    """ Update initial data with new data. """
+    if initial_data.empty:
+        return new_data
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def save_predictions_to_csv(time, y_pred, y_pred_upper, y_pred_lower, output_csv):
+    """ Save OD predictions and error bounds to a CSV file. """
+    # Create a dataframe for the plot data
+    plot_data = pd.DataFrame({
+        'time (h)': time,
+        'Predicted': y_pred,
+        'Upper Bound': y_pred_upper,
+        'Lower Bound': y_pred_lower
+    })
+
+    # Save dataframe to a CSV file
+    plot_data.to_csv(output_csv, index=False)
+
+    print(f'Predictions and error bounds saved to {output_csv}')
+
+def load_original_data(xls):
+    """ Load data from a selected sheet. """
+    sheet_names = xls.sheet_names
+    print("Available sheets:")
+    for i, sheet_name in enumerate(sheet_names):
+        print(f"{i+1}. {sheet_name}")
+
+    while True:
+        try:
+            sheet_index = int(input("\nEnter the index of the sheet to use as original data: ")) - 1
+            if sheet_index < 0 or sheet_index >= len(sheet_names):
+                raise ValueError("Invalid sheet index. Please enter a valid index.")
+            break
+        except ValueError as e:
+            print(e)
+
+    sheet_name_initial = sheet_names[sheet_index]
+    df_initial = pd.read_excel(xls, sheet_name=sheet_name_initial)
+    df_initial = rename_columns(df_initial)
+    return df_initial, sheet_name_initial
+
+# Initial setup
+df_train_initial = pd.DataFrame()
+df_test_initial = pd.DataFrame()
+
+df_train_initial, sheet_name_train_initial = load_original_data(xls)
+df_test_initial, sheet_name_test_initial = load_original_data(xls)
+
+print(f'Data from sheet "{sheet_name_train_initial}":')
+print(df_train_initial)
+print(f'\nData from sheet "{sheet_name_test_initial}":')
+print(df_test_initial)
+
+od_columns = [col for col in df_train_initial.columns if col.startswith('OD')]
+
+X_train_initial = df_train_initial.drop(columns=['time (h)'])
+y_train_initial = df_train_initial[od_columns]
+X_test_initial = df_test_initial.drop(columns=['time (h)'])
+y_test_initial = df_test_initial[od_columns]
+
+y_pred_aggregated_initial = np.zeros_like(y_test_initial.values)
+
+for col_idx, col in enumerate(od_columns):
+    print(f'\nTraining model for column: {col}')
+    X_train_col = X_train_initial
+    y_train_col = y_train_initial[col]
+    X_test_col = X_test_initial
+    y_test_col = y_test_initial[col]
+    
+    model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+    y_pred_aggregated_initial[:, col_idx] = y_pred_col
+
+y_pred_aggregated_initial = np.mean(y_pred_aggregated_initial, axis=1)
+
+residuals = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_initial):] - y_pred_aggregated_initial
+residual_std = np.std(residuals)
+
+time = df_test_initial['time (h)'][len(df_test_initial['time (h)']) - len(y_pred_aggregated_initial):]
+
+smooth_window = 5
+residual_std_smooth = np.convolve(np.abs(residuals), np.ones(smooth_window)/smooth_window, mode='same')
+error_scaling_factor = 3.3 * residual_std_smooth / np.max(residual_std_smooth)
+y_pred_upper = y_pred_aggregated_initial + error_scaling_factor * residual_std
+y_pred_lower = y_pred_aggregated_initial - error_scaling_factor * residual_std
+
+# Save the initial predictions and bounds to a CSV file
+save_predictions_to_csv(time, y_pred_aggregated_initial, y_pred_upper, y_pred_lower, 'initial_plot_data.csv')
+
+update_model = input("Do you want to update the model with new training data? (yes/no): ").strip().lower()
+
+if update_model == 'yes':
+    df_train_new, new_sheet_name_train = load_original_data(xls)
+    
+    print(f'\nUpdating model with new training data from sheet "{new_sheet_name_train}":')
+    print(df_train_new)
+    
+    df_train_updated = update_initial_data(df_train_initial, rename_columns(df_train_new))
+    
+    X_train_updated = df_train_updated.drop(columns=['time (h)'])
+    y_train_updated = df_train_updated[od_columns]
+    
+    y_pred_aggregated_updated = np.zeros_like(y_test_initial.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col}')
+        X_train_col = X_train_updated
+        y_train_col = y_train_updated[col]
+        
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_initial, y_test_initial[col])
+        y_pred_aggregated_updated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated_updated = np.mean(y_pred_aggregated_updated, axis=1)
+
+    residuals_updated = df_test_initial['OD2'][len(df_test_initial) - len(y_pred_aggregated_updated):] - y_pred_aggregated_updated
+    residual_std_updated = np.std(residuals_updated)
+
+    error_scaling_factor_updated = 3.3 * np.convolve(np.abs(residuals_updated), np.ones(smooth_window)/smooth_window, mode='same') / np.max(residual_std_smooth)
+    y_pred_upper_updated = y_pred_aggregated_updated + error_scaling_factor_updated * residual_std_updated
+    y_pred_lower_updated = y_pred_aggregated_updated - error_scaling_factor_updated * residual_std_updated
+
+    # Save the updated predictions and bounds to a CSV file
+    save_predictions_to_csv(time, y_pred_aggregated_updated, y_pred_upper_updated, y_pred_lower_updated, 'updated_plot_data.csv')
+
+elif update_model == 'no':
+    print("\nModel remains unchanged.")
+else:
+    print("\nInvalid input. Model remains unchanged.")
+
+
+import pandas as pd
+import numpy as np
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+import matplotlib.pyplot as plt
+import os
+
+# File and folder setup
+excel_file = r'KHK growth curves_MAA.xlsx'
+output_folder = 'MAA-Model'
+os.makedirs(output_folder, exist_ok=True)
+
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    """Rename columns of the dataframe."""
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    """Train the XGBoost model and evaluate it."""
+    param_grid = {
+        'max_depth': [3, 5, 7],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'n_estimators': [50, 100, 200]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_test = best_model.predict(X_test)
+
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+def update_initial_data(initial_data, new_data):
+    """Update initial data with new data."""
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def save_predictions_to_csv(time, y_pred, y_pred_upper, y_pred_lower, output_csv):
+    """Save OD predictions and error bounds to a CSV file."""
+    plot_data = pd.DataFrame({
+        'time (h)': time,
+        'Predicted': y_pred,
+        'Upper Bound': y_pred_upper,
+        'Lower Bound': y_pred_lower
+    })
+
+    plot_data.to_csv(output_csv, index=False)
+    print(f'Predictions and error bounds saved to {output_csv}')
+
+def plot_predictions(time, y_test, y_pred, y_pred_upper, y_pred_lower, od_columns, sheet_name):
+    """Plot the actual vs predicted data with error bounds."""
+    plt.figure(figsize=(10, 6))
+    
+    for col_idx, col in enumerate(od_columns):
+        plt.plot(time, y_test[col], label=f'Actual {col}', marker='o', linestyle='--')
+        plt.plot(time, y_pred, label=f'Predicted {col}', marker='x')
+
+    plt.fill_between(time, y_pred_lower, y_pred_upper, color='gray', alpha=0.2, label='Error Bounds')
+    plt.title(f'OD Predictions for {sheet_name}')
+    plt.xlabel('Time (h)')
+    plt.ylabel('OD Values')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# Load all sheets
+sheet_names = xls.sheet_names
+
+# Initialize an empty DataFrame for the initial data
+df_train_initial = pd.DataFrame()
+
+# Iteratively train and update the model
+for i in range(len(sheet_names)):
+    df_train = pd.read_excel(xls, sheet_name=sheet_names[i])
+    df_train = rename_columns(df_train)
+
+    if i == len(sheet_names) - 1:
+        df_test = df_train.copy()  # Use the last sheet for both training and testing
+    else:
+        df_test = pd.read_excel(xls, sheet_name=sheet_names[i + 1])
+        df_test = rename_columns(df_test)
+
+    od_columns = [col for col in df_train.columns if col.startswith('OD')]
+
+    X_train = df_train.drop(columns=['time (h)'])
+    y_train = df_train[od_columns]
+    X_test = df_test.drop(columns=['time (h)'])
+    y_test = df_test[od_columns]
+
+    y_pred_aggregated = np.zeros_like(y_test.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col} using sheet "{sheet_names[i]}" as training data.')
+        X_train_col = X_train
+        y_train_col = y_train[col]
+        X_test_col = X_test
+        y_test_col = y_test[col]
+
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+        y_pred_aggregated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated = np.mean(y_pred_aggregated, axis=1)
+
+    residuals = df_test['OD2'][len(df_test) - len(y_pred_aggregated):] - y_pred_aggregated
+    residual_std = np.std(residuals)
+
+    time = df_test['time (h)'][len(df_test['time (h)']) - len(y_pred_aggregated):]
+
+    smooth_window = 5
+    residual_std_smooth = np.convolve(np.abs(residuals), np.ones(smooth_window)/smooth_window, mode='same')
+    error_scaling_factor = 3.3 * residual_std_smooth / np.max(residual_std_smooth)
+    y_pred_upper = y_pred_aggregated + error_scaling_factor * residual_std
+    y_pred_lower = y_pred_aggregated - error_scaling_factor * residual_std
+
+    output_csv = os.path.join(output_folder, f'{sheet_names[i]}_predictions.csv')
+    save_predictions_to_csv(time, y_pred_aggregated, y_pred_upper, y_pred_lower, output_csv)
+
+    # Ask the user if they want to display the plot
+    show_plot = input(f"\nDo you want to see the plot for sheet '{sheet_names[i]}'? (yes/no): ").strip().lower()
+    if show_plot == 'yes':
+        plot_predictions(time, y_test, y_pred_aggregated, y_pred_upper, y_pred_lower, od_columns, sheet_names[i])
+
+    # Update the training data for the next iteration
+    df_train_initial = update_initial_data(df_train_initial, df_train)
+
+    print(f'Model updated with sheet "{sheet_names[i]}" as training data.\n')
+
+print("Final model training complete.")
+
+import pandas as pd
+import numpy as np
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+import matplotlib.pyplot as plt
+import os
+from scipy.ndimage import gaussian_filter1d
+import time
+
+# Set the Matplotlib backend to 'Agg' for non-interactive plotting
+import matplotlib
+matplotlib.use('Agg')
+
+# File and folder setup
+excel_file = r'KHK growth curves_M63 - Copy.xlsx'
+output_folder = 'M63-Model'
+plot_folder = 'cleaned-M63'
+os.makedirs(output_folder, exist_ok=True)
+os.makedirs(plot_folder, exist_ok=True)
+
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    "Rename columns of the dataframe."
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    "Train the XGBoost model and evaluate it."
+    param_grid = {
+        'max_depth': [3, 4, 5],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'n_estimators': [50, 100, 200],
+        'alpha': [0, 0.1, 1],
+        'lambda': [1, 1.5, 2]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse', verbosity=1)
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_test = best_model.predict(X_test)
+
+    mse_test = mean_squared_error(y_test, y_pred_test)
+    r2_test = r2_score(y_test, y_pred_test)
+
+    print(f'Best parameters: {grid_search.best_params_}')
+    print('\nTesting set evaluation:')
+    print(f'Mean Squared Error: {mse_test:.2f}')
+    print(f'R^2 Score: {r2_test:.2f}')
+
+    return best_model, y_pred_test
+
+def update_initial_data(initial_data, new_data):
+    "Update initial data with new data."
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def save_predictions_to_csv(time, y_pred, y_pred_upper, y_pred_lower, output_csv):
+    "Save OD predictions and error bounds to a CSV file."
+    plot_data = pd.DataFrame({
+        'time (h)': time,
+        'Predicted': y_pred,
+        'Upper Bound': y_pred_upper,
+        'Lower Bound': y_pred_lower
+    })
+
+    plot_data.to_csv(output_csv, index=False)
+    print(f'Predictions and error bounds saved to {output_csv}')
+
+def plot_predictions(time, y_test, y_pred, y_pred_upper, y_pred_lower, od_columns, sheet_name):
+    "Plot the actual vs predicted data with error bounds."
+    plt.figure(figsize=(10, 6))
+    
+    for col_idx, col in enumerate(od_columns):
+        plt.plot(time, y_test[col], label=f'Actual {col}', marker='o', linestyle='--')
+        plt.plot(time, y_pred, label=f'Predicted {col}', marker='x')
+
+    plt.fill_between(time, y_pred_lower, y_pred_upper, color='gray', alpha=0.2, label='Error Bounds')
+    plt.title(f'OD Predictions for {sheet_name}')
+    plt.xlabel('Time (h)')
+    plt.ylabel('OD Values')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(plot_folder, f'{sheet_name}_plot.png'))
+    plt.close()
+
+# Load all sheets
+sheet_names = xls.sheet_names
+
+# Initialize an empty DataFrame for the initial data
+df_train_initial = pd.DataFrame()
+
+# Record the start time
+start_time = time.time()
+
+# Iteratively train and update the model
+for i in range(len(sheet_names)):
+    df_train = pd.read_excel(xls, sheet_name=sheet_names[i])
+    df_train = rename_columns(df_train)
+
+    if i == len(sheet_names) - 1:
+        df_test = df_train.copy()  # Use the last sheet for both training and testing
+    else:
+        df_test = pd.read_excel(xls, sheet_name=sheet_names[i + 1])
+        df_test = rename_columns(df_test)
+
+    od_columns = [col for col in df_train.columns if col.startswith('OD')]
+
+    X_train = df_train.drop(columns=['time (h)'])
+    y_train = df_train[od_columns]
+    X_test = df_test.drop(columns=['time (h)'])
+    y_test = df_test[od_columns]
+
+    y_pred_aggregated = np.zeros_like(y_test.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col} using sheet "{sheet_names[i]}" as training data.')
+        X_train_col = X_train
+        y_train_col = y_train[col]
+        X_test_col = X_test
+        y_test_col = y_test[col]
+
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+        y_pred_aggregated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated = np.mean(y_pred_aggregated, axis=1)
+
+    residuals = df_test['OD2'][len(df_test) - len(y_pred_aggregated):] - y_pred_aggregated
+
+    # Initialize error bounds with a reasonable default or initial residuals' std
+    initial_error_bound = np.std(residuals) if len(residuals) > 0 else 0
+
+    # Smooth residuals using Gaussian filter to reduce jaggedness
+    smooth_window = 100  # Increase window size for more smoothing
+    smoothed_residuals = gaussian_filter1d(np.abs(residuals), sigma=smooth_window)
+
+    # Calculate error bounds based on smoothed residuals
+    error_scaling_factor = 3 # Adjust this factor to scale the error bounds
+    y_pred_upper = y_pred_aggregated + error_scaling_factor * smoothed_residuals
+    y_pred_lower = y_pred_aggregated - error_scaling_factor * smoothed_residuals
+
+    # Clip lower bounds to ensure they don't go below zero
+    y_pred_lower = np.maximum(y_pred_lower, 0)
+
+    time = df_test['time (h)'][len(df_test['time (h)']) - len(y_pred_aggregated):]
+
+    output_csv = os.path.join(output_folder, f'{sheet_names[i]}_predictions.csv')
+    save_predictions_to_csv(time, y_pred_aggregated, y_pred_upper, y_pred_lower, output_csv)
+
+    # Save the plot to a file
+    plot_predictions(time, y_test, y_pred_aggregated, y_pred_upper, y_pred_lower, od_columns, sheet_names[i])
+
+    # Update the training data for the next iteration
+    df_train_initial = update_initial_data(df_train_initial, df_train)
+
+    print(f'Model updated with sheet "{sheet_names[i]}" as training data.\n')
+
+# Record the end time and calculate the total training time
+end_time = time.time()
+elapsed_time = end_time - start_time
+print(f"Final model training complete in {elapsed_time / 60:.2f} minutes.")
+
+
+
+
+import pandas as pd
+import numpy as np
+import xgboost as xgb
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error, r2_score
+import matplotlib.pyplot as plt
+import os
+from scipy.ndimage import gaussian_filter1d
+
+# File and folder setup
+excel_file = r'KHK growth curves_M63 - Copy.xlsx'
+output_folder = 'M63-Model'
+os.makedirs(output_folder, exist_ok=True)
+
+xls = pd.ExcelFile(excel_file)
+
+def rename_columns(dataframe):
+    "Rename columns of the dataframe."
+    new_columns = ['time (h)'] + [f'OD{i+2}' for i in range(len(dataframe.columns) - 1)]
+    dataframe.columns = new_columns
+    return dataframe
+
+def train_evaluate_model(X_train, y_train, X_test, y_test):
+    "Train the XGBoost model and evaluate it."
+    param_grid = {
+        'max_depth': [3, 4, 5],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'n_estimators': [50, 100, 200],
+        'alpha': [0, 0.1, 1],
+        'lambda': [1, 1.5, 2]
+    }
+
+    xgb_model = xgb.XGBRegressor(objective='reg:squarederror', eval_metric='rmse')
+    grid_search = GridSearchCV(xgb_model, param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    best_model = grid_search.best_estimator_
+
+    y_pred_test = best_model.predict(X_test)
+
+    return best_model, y_pred_test
+
+def update_initial_data(initial_data, new_data):
+    "Update initial data with new data."
+    return pd.concat([initial_data, new_data], ignore_index=True)
+
+def save_predictions_to_csv(time, y_pred_upper, y_pred_lower, output_csv):
+    "Save error bounds to a CSV file."
+    plot_data = pd.DataFrame({
+        'time (h)': time,
+        'Upper Bound': y_pred_upper,
+        'Lower Bound': y_pred_lower
+    })
+
+    plot_data.to_csv(output_csv, index=False)
+    print(f'Error bounds saved to {output_csv}')
+
+def plot_error_bounds(time, y_pred_upper, y_pred_lower, sheet_name):
+    "Plot the error bounds without actual or predicted values."
+    plt.figure(figsize=(10, 6))
+    
+    plt.fill_between(time, y_pred_lower, y_pred_upper, color='gray', alpha=0.5, label='Error Bounds')
+    plt.title(f'Error Bounds for {sheet_name}')
+    plt.xlabel('Time (h)')
+    plt.ylabel('OD Values')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# Load all sheets
+sheet_names = xls.sheet_names
+
+# Initialize an empty DataFrame for the initial data
+df_train_initial = pd.DataFrame()
+
+# Iteratively train and update the model
+for i in range(len(sheet_names)):
+    df_train = pd.read_excel(xls, sheet_name=sheet_names[i])
+    df_train = rename_columns(df_train)
+
+    if i == len(sheet_names) - 1:
+        df_test = df_train.copy()  # Use the last sheet for both training and testing
+    else:
+        df_test = pd.read_excel(xls, sheet_name=sheet_names[i + 1])
+        df_test = rename_columns(df_test)
+
+    od_columns = [col for col in df_train.columns if col.startswith('OD')]
+
+    X_train = df_train.drop(columns=['time (h)'])
+    y_train = df_train[od_columns]
+    X_test = df_test.drop(columns=['time (h)'])
+    y_test = df_test[od_columns]
+
+    y_pred_aggregated = np.zeros_like(y_test.values)
+
+    for col_idx, col in enumerate(od_columns):
+        print(f'\nTraining model for column: {col} using sheet "{sheet_names[i]}" as training data.')
+        X_train_col = X_train
+        y_train_col = y_train[col]
+        X_test_col = X_test
+        y_test_col = y_test[col]
+
+        model, y_pred_col = train_evaluate_model(X_train_col, y_train_col, X_test_col, y_test_col)
+        y_pred_aggregated[:, col_idx] = y_pred_col
+
+    y_pred_aggregated = np.mean(y_pred_aggregated, axis=1)
+
+    residuals = df_test['OD2'][len(df_test) - len(y_pred_aggregated):] - y_pred_aggregated
+
+    # Initialize error bounds with a reasonable default or initial residuals' std
+    initial_error_bound = np.std(residuals) if len(residuals) > 0 else 0
+
+    # Smooth residuals using Gaussian filter to reduce jaggedness
+    smooth_window = 100  # Increase window size for more smoothing
+    smoothed_residuals = gaussian_filter1d(np.abs(residuals), sigma=smooth_window)
+
+    # Calculate error bounds based on smoothed residuals
+    error_scaling_factor = 2.75  # Adjust this factor to scale the error bounds
+    y_pred_upper = y_pred_aggregated + error_scaling_factor * smoothed_residuals
+    y_pred_lower = y_pred_aggregated - error_scaling_factor * smoothed_residuals
+
+    # Clip lower bounds to ensure they don't go below zero
+    y_pred_lower = np.maximum(y_pred_lower, 0)
+
+    time = df_test['time (h)'][len(df_test['time (h)']) - len(y_pred_aggregated):]
+
+    output_csv = os.path.join(output_folder, f'{sheet_names[i]}_error_bounds.csv')
+    save_predictions_to_csv(time, y_pred_upper, y_pred_lower, output_csv)
+
+    # Update the training data for the next iteration
+    df_train_initial = update_initial_data(df_train_initial, df_train)
+
+    print(f'Model updated with sheet "{sheet_names[i]}" as training data.\n')
+
+print("Final model training complete.")
